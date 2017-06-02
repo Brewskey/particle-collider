@@ -1,0 +1,33 @@
+{
+  "name": "particle-collider",
+  "version": "1.0.0",
+  "description": "spark-server stress tester",
+  "main": "index.js",
+  "scripts": {
+    "flow": "flow",
+    "start": "babel-node src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Brewskey/particle-collider.git"
+  },
+  "author": "Brewskey",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Brewskey/particle-collider/issues"
+  },
+  "homepage": "https://github.com/Brewskey/particle-collider#readme",
+  "devDependencies": {
+    "babel-cli": "^6.24.1",
+    "babel-plugin-transform-class-properties": "^6.24.1",
+    "babel-preset-env": "^1.5.1",
+    "babel-preset-es2015": "^6.24.1",
+    "babel-preset-flow": "^6.23.0",
+    "babel-preset-latest": "^6.24.1",
+    "flow-bin": "^0.47.0"
+  },
+  "dependencies": {
+    "coap-packet": "^0.1.14"
+  }
+}
