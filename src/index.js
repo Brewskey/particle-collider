@@ -1,8 +1,13 @@
-import TCPDevice from './TCPDevice';
+// @flow
 
-const serverUrl = '192.168.0.175';
+import App from './App';
 
-const device = new TCPDevice(serverUrl, 5683);
+const app = new App();
+app.run();
 
-device.connect();
-console.log('foobar');
+// const serverUrl = '192.168.0.175';
+//
+// const device = new TCPDevice(serverUrl, 5683);
+//
+// device.connect();
+// console.log('foobar');

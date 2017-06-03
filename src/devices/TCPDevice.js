@@ -1,14 +1,16 @@
 // @flow
 
 import CoapPacket from 'coap-packet';
-import {Socket} from 'net';
+import fs from 'fs';
+import { Socket } from 'net';
 import NodeRSA from 'node-rsa';
 
-import ChunkingStream from './lib/ChunkingStream';
-import CoapType from './lib/CoapType';
-import CoapUriType from './lib/CoapUriType';
-import CryptoManager from './lib/CryptoManager';
-import CryptoStream from './lib/CryptoStream';
+import ChunkingStream from '../lib/ChunkingStream';
+import CoapType from '../lib/CoapType';
+import CoapUriType from '../lib/CoapUriType';
+import CryptoManager from '../lib/CryptoManager';
+import CryptoStream from '../lib/CryptoStream';
+import NetworkThrottleStream from '../lib/NetworkThrottleStream';
 
 const DEVICE_KEY_LENGTH = 12;
 
@@ -27,11 +29,18 @@ type DeviceState =
   | 'nonce'
   | 'set-session-key';
 
+type TCPDeviceOptions = {
+  deviceID: ?string,
+  networkDelay: number,
+  serverAddress: string,
+};
+
 class TCPDevice {
   _cipherStream: CryptoStream;
   _decipherStream: CryptoStream;
   _deviceID: Buffer;
   _messageID: number = 0;
+  _networkDelay: number;
   _port: number;
   _privateKey: NodeRSA;
   _serverAddress: string;
@@ -40,19 +49,34 @@ class TCPDevice {
   _state: DeviceState;
   _token: Buffer;
 
-  constructor(serverAddress: string, port: number) {
+  constructor({deviceID, networkDelay, serverAddress}: TCPDeviceOptions) {
     this._state = 'nonce';
+    this._port = 5683;
+    this._networkDelay = networkDelay;
     this._serverAddress = serverAddress;
-    this._port = port;
-    this._socket = new Socket();
-    this._privateKey = CryptoManager.createKey();
     this._serverKey = CryptoManager.getServerKey();
 
-    // Generate random device key
-    this._deviceID = CryptoManager.randomBytes(DEVICE_KEY_LENGTH);
+    if (!deviceID) {
+      // Generate random device key
+      deviceID = CryptoManager.randomBytes(DEVICE_KEY_LENGTH)
+        .toString('hex')
+        .toLowerCase();
+      const privateKey = CryptoManager.createKey();
+      fs.writeFileSync(
+        `./data/keys/${deviceID}.pem`,
+        privateKey.exportKey('pkcs1-private-pem'),
+      );
+    }
+
+    this._privateKey = CryptoManager.loadPrivateKey(
+      fs.readFileSync(`./data/keys/${deviceID}.pem`, 'utf8'),
+    );
+    this._deviceID = Buffer.from(deviceID, 'hex');
   }
 
   connect(): void {
+    console.log(`Connecting ${this.getDeviceID()}`);
+    this._socket = new Socket();
     this._socket.connect({
       host: this._serverAddress,
       port: this._port,
@@ -62,6 +86,25 @@ class TCPDevice {
       'data',
       this._onReadData,
     );
+
+    var reconnect = () => {
+      this._state = 'nonce';
+      this._decipherStream.removeListener('data', this._onNewCoapMessage);
+      this._socket.removeAllListeners('disconnect');
+      this._socket.removeAllListeners('error');
+      setTimeout(() => this.connect(), 10000);
+    };
+
+    this._socket.on('error', reconnect);
+    this._socket.on('disconnect', reconnect);
+  }
+
+  getDeviceID(): string {
+    return this._deviceID.toString('hex').toLowerCase();
+  }
+
+  getPublicKey(): string {
+    return this._privateKey.exportKey('pkcs8-public-pem');
   }
 
   _onReadData = (data: Buffer): void => {
@@ -115,15 +158,22 @@ class TCPDevice {
         const chunkingIn = new ChunkingStream({ outgoing: false });
         const chunkingOut = new ChunkingStream({ outgoing: true });
 
+        const inputDelayStream = new NetworkThrottleStream(this._networkDelay);
+        const outputDelayStream = new NetworkThrottleStream(this._networkDelay);
+
         // What I receive gets broken into message chunks, and goes into the
         // decrypter
-        this._socket.pipe(chunkingIn);
-        chunkingIn.pipe(this._decipherStream);
+        this._socket
+          .pipe(inputDelayStream)
+          .pipe(chunkingIn)
+          .pipe(this._decipherStream);
 
         // What I send goes into the encrypter, and then gets broken into message
         // chunks
-        this._cipherStream.pipe(chunkingOut);
-        chunkingOut.pipe(this._socket);
+        this._cipherStream
+          .pipe(outputDelayStream)
+          .pipe(chunkingOut)
+          .pipe(this._socket);
 
         this._socket.removeListener('data', this._onReadData);
         this._decipherStream.on('data', this._onNewCoapMessage);
@@ -176,17 +226,14 @@ class TCPDevice {
   }
 
   _prepareDevicePublicKey(nonce: Buffer): Buffer {
-    const publicKeyBuffer = this._privateKey.exportKey('pkcs8-public-der');
-
     // Concat a bunch of data that we will send over encrypted with the
     // server public key.
     return Buffer.concat(
       [
         nonce,
         this._deviceID,
-        publicKeyBuffer,
+        this._privateKey.exportKey('pkcs8-public-der'),
       ],
-      nonce.length + this._deviceID.length + publicKeyBuffer.length,
     );
   }
 
@@ -246,7 +293,6 @@ class TCPDevice {
   }
 
   _pingServer(): void {
-    console.log('PING');
     const packet = CoapPacket.generate({
       confirmable: true,
       messageId: this._nextMessageID(),
