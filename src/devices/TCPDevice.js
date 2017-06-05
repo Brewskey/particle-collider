@@ -11,8 +11,10 @@ import CoapUriType from '../lib/CoapUriType';
 import CryptoManager from '../lib/CryptoManager';
 import CryptoStream from '../lib/CryptoStream';
 import NetworkThrottleStream from '../lib/NetworkThrottleStream';
+import testWebhook from '../test-webhook.json';
 
 const DEVICE_KEY_LENGTH = 12;
+const COUNTER_MAX = 65536;
 
 // TODO - Fill in real values here. We can just use whatever is in the photon.
 const PRODUCT_ID = 0;
@@ -39,8 +41,12 @@ class TCPDevice {
   _cipherStream: CryptoStream;
   _decipherStream: CryptoStream;
   _deviceID: Buffer;
+  _isConnected: boolean;
+  _isConnecting: boolean;
+  _isDisconnected: boolean;
   _messageID: number = 0;
   _networkDelay: number;
+  _pingInterval: ?number;
   _port: number;
   _privateKey: NodeRSA;
   _serverAddress: string;
@@ -75,10 +81,13 @@ class TCPDevice {
   }
 
   connect(): void {
-    console.log(`Connecting ${this.getDeviceID()}`);
+    if (this._isConnecting) {
+      return;
+    }
+    this._isConnecting = true;
     this._socket = new Socket();
     this._socket.connect({
-      host: this._serverAddress,
+      host: this._serverAddress.substr(this._serverAddress.indexOf('://')+3),
       port: this._port,
     });
 
@@ -87,16 +96,18 @@ class TCPDevice {
       this._onReadData,
     );
 
-    var reconnect = () => {
-      this._state = 'nonce';
-      this._decipherStream.removeListener('data', this._onNewCoapMessage);
-      this._socket.removeAllListeners('disconnect');
-      this._socket.removeAllListeners('error');
-      setTimeout(() => this.connect(), 10000);
-    };
-
-    this._socket.on('error', reconnect);
-    this._socket.on('disconnect', reconnect);
+    this._socket.on(
+      'error',
+      this._reconnect,
+    );
+    this._socket.on(
+      'close',
+      this._reconnect,
+    );
+    this._socket.on(
+      'timeout',
+      this._reconnect,
+    );
   }
 
   getDeviceID(): string {
@@ -106,6 +117,53 @@ class TCPDevice {
   getPublicKey(): string {
     return this._privateKey.exportKey('pkcs8-public-pem');
   }
+
+  getIsConnected(): boolean {
+    return this._isConnected;
+  }
+
+  sendWebhook = (): void => {
+    this._sendEvent(
+      testWebhook.name,
+      Buffer.from(`{"payload": "${Math.random()}"}`,
+    ));
+  };
+
+  disconnect = (): void => {
+    this._isDisconnected = true;
+    this._disconnect();
+  }
+
+  _disconnect = (): void => {
+    if (this._isDisconnected) {
+      return;
+    }
+
+    this._isConnecting = false;
+    this._isConnected = false;
+    this._state = 'nonce';
+    if (this._decipherStream) {
+      this._decipherStream.removeListener('data', this._onNewCoapMessage);
+    }
+
+    if (this._socket.connected) {
+      this._socket.destroy();
+    }
+
+    this._socket.removeAllListeners('disconnect');
+    this._socket.removeAllListeners('error');
+
+    if (this._pingInterval) {
+      clearInterval(this._pingInterval);
+      this._pingInterval = null;
+    }
+  }
+
+  _reconnect = (error: Error): void => {
+    console.log(error);
+    this._disconnect();
+    setTimeout(() => this.connect(), 15000);
+  };
 
   _onReadData = (data: Buffer): void => {
     switch (this._state) {
@@ -183,7 +241,9 @@ class TCPDevice {
         this._state = 'next';
 
         // Ping every 10 seconds
-        setInterval(() => this._pingServer(), 10000);
+        this._pingInterval = setInterval(() => this._pingServer(), 10000);
+        this._isConnected = true;
+
         break;
       }
 
@@ -238,7 +298,12 @@ class TCPDevice {
   }
 
   _nextMessageID(): number {
-    return ++this._messageID;
+    this._messageID += 1;
+    if (this._messageID >= COUNTER_MAX) {
+      this._messageID = 0;
+    }
+
+    return this._messageID;
   }
 
   _coapMessageHeader(type: number, tokenLength: number) {
@@ -270,7 +335,7 @@ class TCPDevice {
       payload: new Buffer(data),
     });
 
-    this._cipherStream.write(packet);
+    this._writeData(packet);
   }
 
   _sendDescribe(descriptionFlags: number, serverPacket: CoapPacket): void {
@@ -289,16 +354,46 @@ class TCPDevice {
       token: serverPacket.token,
     });
 
-    this._cipherStream.write(packet);
+    this._writeData(packet);
   }
 
   _pingServer(): void {
+    if (!this._isConnected) {
+      return;
+    }
+
     const packet = CoapPacket.generate({
+      code: '0',
       confirmable: true,
       messageId: this._nextMessageID(),
     });
 
-    this._cipherStream.write(packet);
+    this._writeData(packet);
+  }
+
+  _sendEvent(eventName: string, payload: Buffer): void {
+    if (!this._isConnected) {
+      return;
+    }
+
+    const packet = CoapPacket.generate({
+      code: 'POST',
+      confirmable: true,
+      messageId: this._nextMessageID(),
+      options: [{
+        name: 'Uri-Path',
+        value: new Buffer(`e/${eventName}`),
+      }],
+      payload,
+    });
+
+    this._writeData(packet);
+  }
+
+  _writeData = (packet: Object): void => {
+    try {
+      this._socket.writable && this._cipherStream.write(packet);
+    } catch (ignore) {}
   }
 }
 
