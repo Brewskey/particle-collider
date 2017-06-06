@@ -62,6 +62,12 @@ class TCPDevice {
     this._serverAddress = serverAddress;
     this._serverKey = CryptoManager.getServerKey();
 
+
+    const index = serverAddress.indexOf('://');
+    if (index >= 0) {
+      this._serverAddress = serverAddress.substr(index + 3);
+    }
+
     if (!deviceID) {
       // Generate random device key
       deviceID = CryptoManager.randomBytes(DEVICE_KEY_LENGTH)
@@ -86,8 +92,10 @@ class TCPDevice {
     }
     this._isConnecting = true;
     this._socket = new Socket();
+
+
     this._socket.connect({
-      host: this._serverAddress.substr(this._serverAddress.indexOf('://')+3),
+      host: this._serverAddress,
       port: this._port,
     });
 
@@ -130,8 +138,8 @@ class TCPDevice {
   };
 
   disconnect = (): void => {
-    this._isDisconnected = true;
     this._disconnect();
+    this._isDisconnected = true;
   }
 
   _disconnect = (): void => {
@@ -143,15 +151,17 @@ class TCPDevice {
     this._isConnected = false;
     this._state = 'nonce';
     if (this._decipherStream) {
-      this._decipherStream.removeListener('data', this._onNewCoapMessage);
+      this._decipherStream.removeAllListeners();
     }
 
-    if (this._socket.connected) {
+    this._socket.removeAllListeners();
+    if (!this._socket.destroyed) {
       this._socket.destroy();
+      this._socket.on(
+        'error',
+        () => {},
+      );
     }
-
-    this._socket.removeAllListeners('disconnect');
-    this._socket.removeAllListeners('error');
 
     if (this._pingInterval) {
       clearInterval(this._pingInterval);
@@ -160,7 +170,10 @@ class TCPDevice {
   }
 
   _reconnect = (error: Error): void => {
-    console.log(error);
+    if (this._isDisconnected) {
+      return;
+    }
+
     this._disconnect();
     setTimeout(() => this.connect(), 15000);
   };
@@ -169,7 +182,9 @@ class TCPDevice {
     switch (this._state) {
       case 'nonce': {
         const payload = this._prepareDevicePublicKey(data);
-        this._socket.write(this._serverKey.encrypt(payload));
+        if (!this._socket.destroyed) {
+          this._socket.write(this._serverKey.encrypt(payload));
+        }
         this._state = 'set-session-key';
         break;
       }
@@ -392,7 +407,7 @@ class TCPDevice {
 
   _writeData = (packet: Object): void => {
     try {
-      this._socket.writable && this._cipherStream.write(packet);
+      !this._socket.destroyed && this._cipherStream.write(packet);
     } catch (ignore) {}
   }
 }
