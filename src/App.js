@@ -353,7 +353,7 @@ class App {
       device.disconnect();
     }
 
-    this._existingDeviceIDs.concat(idsToAdd);
+    this._existingDeviceIDs = this._existingDeviceIDs.concat(idsToAdd);
   }
 
   _login = async (config: Config): Promise<void> => {
