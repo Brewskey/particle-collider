@@ -42,11 +42,13 @@ const formatOption = (
   description: string,
   strikeThrough?: number | boolean,
 ) => {
-  const output = `${chalk.bgYellow.black(key)} ${description}`;
-  return ' ' +
-    (!!strikeThrough
-      ? chalk.strikethrough(output)
-      : output);
+  if (strikeThrough) {
+    return;
+  }
+
+  console.log(
+    `${chalk.bgYellow.black(key)} ${description}`,
+  );
 }
 
 class App {
@@ -55,8 +57,10 @@ class App {
   _devices: Array<TCPDevice> = [];
   _existingDeviceIDs: Array<string> = [];
   _exit: boolean = false;
+  _functionInterval: number;
   _particle: Particle;
   _rl: ReadlineInterface;
+  _variableInterval: number;
   _webhookInterval: number;
 
   constructor() {
@@ -123,29 +127,34 @@ class App {
         }
 
         case '5': {
-          console.log('TODO!!!');
+          await this._callFunctions();
           break;
         }
 
         case '6': {
-          console.log('TODO!!!');
+          await this._callVariables();
           break;
         }
 
-
         case '7': {
-          if (!this._webhookInterval) {
-            await this._callWebhooks();
-          }
+          await this._callWebhooks();
+          break;
+        }
+
+        case '8': {
+          await this._chaosMonkey();
           break;
         }
 
         case 's': {
-          clearInterval(this._webhookInterval);
+          this._clearIntervals();
+
           break;
         }
 
         case 'e': {
+          await this._stopDevices();
+          this._clearIntervals();
           this._exit = true;
           break;
         }
@@ -155,10 +164,19 @@ class App {
     this._rl.close();
   }
 
+  _clearIntervals = (): void => {
+    clearInterval(this._functionInterval);
+    clearInterval(this._variableInterval);
+    clearInterval(this._webhookInterval);
+    this._functionInterval = 0;
+    this._variableInterval = 0;
+    this._webhookInterval = 0;
+  };
+
   _setup = async (config: Config): Promise<void> => {
     this._setServerKey(config);
     await this._login(config);
-    await this._setupWebhooks();
+    await this._setupWebhooks(config);
 
     this._existingDeviceIDs = await this._promise(
       this._particle.listDevices({auth: this._accessToken}),
@@ -168,22 +186,30 @@ class App {
   _renderMenu(): void {
     console.log('');
     console.log('Choose an option:');
-    console.log(formatOption(1, 'Start Virtual Device(s)'));
-    console.log(formatOption(2, 'Stop Virtual Device(s)'));
-    console.log(formatOption(3, 'Set default config'));
-    console.log(formatOption(4, 'Create new config'));
-    console.log(formatOption(5, 'Call random device functions'));
-    console.log(
-      formatOption(6, 'Get random device variables', this._webhookInterval),
+    formatOption(1, 'Start Virtual Device(s)');
+    formatOption(2, 'Stop Virtual Device(s)');
+    formatOption(3, 'Set default config');
+    formatOption(4, 'Create new config');
+    formatOption(5, 'Call random device functions', this._functionInterval);
+    formatOption(6, 'Get random device variables', this._variableInterval);
+    formatOption(7, 'Call random webhooks', this._webhookInterval);
+    formatOption(
+      8,
+      'Chaos-Monkey -- run all the things!',
+      this._functionInterval &&
+      this._variableInterval &&
+      this._webhookInterval,
     );
-    console.log(formatOption(7, 'Call random webhooks'));
-    console.log(formatOption(8, 'Chaos-Monkey -- run all the things!'));
 
-    if (this._webhookInterval) {
-      console.log(formatOption('s', 'Stop random calls'));
+    if (
+      this._functionInterval ||
+      this._variableInterval ||
+      this._webhookInterval
+    ) {
+      formatOption('s', 'Stop random calls');
     }
 
-    console.log(formatOption('e', 'Exit'));
+    formatOption('e', 'Exit');
     console.log('');
   }
 
@@ -297,7 +323,7 @@ class App {
       const device = new TCPDevice({
         deviceID,
         // Simulate devices that take longer to send data
-        networkDelay: Math.random() * 1000 + 500,
+        networkDelay: 0, //Math.random() * 1000 + 500,
         serverAddress: config.serverUrl,
       });
 
@@ -344,14 +370,18 @@ class App {
       amount -= 1;
       const index = Math.floor(Math.random() * this._devices.length );
       const device = this._devices[index];
-      this._devices.splice(index, 1); // Remove the item from the array
       const deviceID = device.getDeviceID();
+      this._devices = this._devices.filter(
+        device => device.getDeviceID() !== deviceID,
+      );
       idsToAdd.push(deviceID);
       this._existingDeviceIDs =
         this._existingDeviceIDs.filter(id => id !== deviceID);
 
       device.disconnect();
     }
+
+    console.log(this._devices.length);
 
     this._existingDeviceIDs = this._existingDeviceIDs.concat(idsToAdd);
   }
@@ -380,42 +410,99 @@ class App {
     this._accessToken = loginData.body.access_token;
   };
 
-  _callWebhooks = async (): Promise<void> => {
+  // Runs server actions with 10% of devices
+  _runServerAction(
+    callback: (device: TCPDevice) => *,
+  ): number {
     if (!this._devices.length) {
       console.log();
       console.log(chalk.red('You don\'t have any devices running. Start some'));
-      return;
+      return 0;
     }
 
-    console.log('Running webhooks randomly. Press any key to quit.');
-
-    const webhookCallInterval = 30 * 1000;
-    const callWebhooks = () => {
-      this._devices.forEach(
+    const INTERVAL = 5000;
+    const callAction = () => {
+      let devices = this._devices.filter(device => device.getIsConnected());
+      devices = devices.slice(0, Math.ceil(devices.length * .1));
+      devices.forEach(
         device => setTimeout(
-          () => device.sendWebhook(),
-          Math.random() * webhookCallInterval,
+          () => callback(device),
+          Math.random() * INTERVAL,
         ),
       );
     };
 
-    this._webhookInterval = setInterval(callWebhooks, webhookCallInterval);
-    callWebhooks();
+    callAction();
+    return setInterval(callAction, INTERVAL);
   };
 
-  _setupWebhooks = async (): Promise<void> => {
+  _callFunctions = async (): Promise<void> => {
+    if (this._functionInterval) {
+      return;
+    }
+
+    this._functionInterval = this._runServerAction(
+      device => this._promise(this._particle.callFunction({
+        auth: this._accessToken,
+        deviceId: device.getDeviceID(),
+        name: 'testFn',
+        argument: Math.random(),
+      }))
+    );
+  };
+
+  _callVariables = async (): Promise<void> => {
+    if (this._variableInterval) {
+      return;
+    }
+
+    this._variableInterval = this._runServerAction(
+      device => this._promise(this._particle.getVariable({
+        auth: this._accessToken,
+        deviceId: device.getDeviceID(),
+        name: 'testVar',
+      }))
+    );
+  };
+
+  _callWebhooks = async (): Promise<void> => {
+    if (this._webhookInterval) {
+      return;
+    }
+
+    this._webhookInterval =
+      this._runServerAction(device => device.sendWebhook());
+  };
+
+  _chaosMonkey = async (): Promise<void> => {
+    this._callFunctions();
+    this._callVariables();
+    this._callWebhooks();
+  }
+
+  _setupWebhooks = async (config: Config): Promise<void> => {
     const webhooks = await this._promise(
       this._particle.listWebhooks({auth: this._accessToken}),
     );
 
     if (webhooks && webhooks.body.length) {
-      return;
+      const promises = webhooks.body.map(webhook => this._promise(
+        this._particle.deleteWebhook({
+          auth: this._accessToken,
+          hookId: webhook.id,
+        }),
+      ));
+      await Promise.all(promises);
     }
 
     await this._promise(
       this._particle.createWebhook({
         ...testWebhook,
         auth: this._accessToken,
+        url: (config.serverPort === 443
+          ? 'https'
+          : 'http'
+        ) + '://' + config.serverUrl + ':' + config.serverPort + '/v1/ping',
       }),
     );
   };

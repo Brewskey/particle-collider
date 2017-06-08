@@ -1,6 +1,7 @@
 // @flow
 
 import CoapPacket from 'coap-packet';
+import EventEmitter from 'events';
 import fs from 'fs';
 import { Socket } from 'net';
 import NodeRSA from 'node-rsa';
@@ -41,6 +42,7 @@ class TCPDevice {
   _cipherStream: CryptoStream;
   _decipherStream: CryptoStream;
   _deviceID: Buffer;
+  _eventEmitter: EventEmitter = new EventEmitter();
   _isConnected: boolean;
   _isConnecting: boolean;
   _isDisconnected: boolean;
@@ -137,6 +139,12 @@ class TCPDevice {
     ));
   };
 
+  on = <TValue>(event: string, callback: TValue => void) =>
+    this._eventEmitter.on(event, callback);
+
+  removeEventListener = <TValue>(event: string, callback: TValue => void) =>
+    this._eventEmitter.removeListener(event, callback);
+
   disconnect = (): void => {
     this._disconnect();
     this._isDisconnected = true;
@@ -178,7 +186,7 @@ class TCPDevice {
     setTimeout(() => this.connect(), 15000);
   };
 
-  _onReadData = (data: Buffer): void => {
+  _onReadData = async (data: Buffer): Promise<void> => {
     switch (this._state) {
       case 'nonce': {
         const payload = this._prepareDevicePublicKey(data);
@@ -268,8 +276,12 @@ class TCPDevice {
     }
   }
 
-  _onNewCoapMessage = (data: Buffer): void => {
+  _onNewCoapMessage = async (data: Buffer): Promise<void> => {
     const packet = CoapPacket.parse(data);
+    if (packet.code === '0.00' && packet.ack) {
+      this._eventEmitter.emit('ACK', packet);
+    }
+
     const uriOption = packet.options.find(option => option.name === 'Uri-Path');
     if (!uriOption) {
       return;
@@ -286,11 +298,36 @@ class TCPDevice {
         }
 
         this._sendDescribe(descriptionFlags, packet);
+
+        // Fully set up - we can register webhooks
+        await this._subscribeWebhooks();
+
+        break;
+      }
+
+      case CoapUriType.Function: {
+        this._sendFunctionResult(packet);
         break;
       }
 
       case CoapUriType.Hello: {
         // spark-server says hi
+        break;
+      }
+
+      case CoapUriType.PrivateEvent:
+      case CoapUriType.PublicEvent: {
+        const uris = packet.options
+          .filter(o => o.name === 'Uri-Path')
+          .map(o => o.value.toString('utf8'));
+        uris.shift(); // Remove E or e
+        uris.pop(); // Remove index of the packet 0-X in the data buffer
+        this._eventEmitter.emit(uris.join('/'), packet);
+        break;
+      }
+
+      case CoapUriType.Variable: {
+        this._sendVariable(packet);
         break;
       }
 
@@ -355,9 +392,10 @@ class TCPDevice {
 
   _sendDescribe(descriptionFlags: number, serverPacket: CoapPacket): void {
     // TODO: make this a bit more fancy
+
     const description = JSON.stringify({
-      f: [],
-      v: {},
+      testfn: {args: [['data', 'INT']]},
+      v: {'testVar': 'INT'},
       // Copypasta'd from a real device
       "p":6,"m":[{"s":16384,"l":"m","vc":30,"vv":30,"f":"b","n":"0","v":11,"d":[]},{"s":262144,"l":"m","vc":30,"vv":30,"f":"s","n":"1","v":105,"d":[]},{"s":262144,"l":"m","vc":30,"vv":30,"f":"s","n":"2","v":105,"d":[{"f":"s","n":"1","v":105,"_":""}]},{"s":131072,"l":"m","vc":30,"vv":30,"u":"2BA4E71E840F596B812003882AAE7CA6496F1590CA4A049310AF76EAF11C943A","f":"u","n":"1","v":2,"d":[{"f":"s","n":"2","v":1,"_":""}]},{"s":131072,"l":"f","vc":30,"vv":0,"d":[]}]
     })
@@ -369,7 +407,7 @@ class TCPDevice {
       token: serverPacket.token,
     });
 
-    this._writeData(packet);
+    this._writeData(packet)
   }
 
   _pingServer(): void {
@@ -384,6 +422,87 @@ class TCPDevice {
     });
 
     this._writeData(packet);
+  }
+
+  _sendFunctionResult(serverPacket: CoapPacket): void {
+    if (!this._isConnected) {
+      return;
+    }
+
+    const returnValue = 1; // Success!
+
+    const packet = CoapPacket.generate({
+      code: '2.04',
+      messageId: this._nextMessageID(),
+      token: serverPacket.token,
+      payload: new Buffer([
+        returnValue >> 24,
+        returnValue >> 16 & 0xff,
+        returnValue >> 8 & 0xff,
+        returnValue & 0xff,
+      ])
+    });
+
+    this._writeData(packet);
+  }
+
+  _sendVariable(serverPacket: CoapPacket): void {
+    if (!this._isConnected) {
+      return;
+    }
+
+    const returnValue = 1; // Success!
+
+    const result = Math.ceil(Math.random() * 100000);
+    const packet = CoapPacket.generate({
+      code: '2.05',
+      messageId: this._nextMessageID(),
+      token: serverPacket.token,
+      payload: new Buffer([
+        result >> 24,
+        result >> 16 & 0xff,
+        result >> 8 & 0xff,
+        result & 0xff,
+      ])
+    });
+
+    this._writeData(packet);
+  }
+
+  _subscribeWebhooks = async (): Promise<void> => {
+    await this._subscribe(
+      `hook-response/test-webhook/${this.getDeviceID()}`,
+      (packet: CoapPacket) => {},
+    );
+  }
+
+  _subscribe = async (
+    eventName: string,
+    callback: (packet: CoapPacket) => void,
+  ): Promise<void> => {
+    if (!this._isConnected) {
+      return;
+    }
+
+    this._eventEmitter.on(eventName, callback);
+
+    const messageID = this._nextMessageID();
+    const packet = CoapPacket.generate({
+      code: 'GET',
+      confirmable: true,
+      messageId: messageID,
+      options: [{
+        name: 'Uri-Path',
+        value: new Buffer(`e/${eventName}`),
+      }],
+    });
+
+    this._writeData(packet);
+    try {
+      await this._waitForResponse('ACK');
+    } catch (error) {
+      console.log(`No ACK for ${eventName}`);
+    }
   }
 
   _sendEvent(eventName: string, payload: Buffer): void {
@@ -403,6 +522,30 @@ class TCPDevice {
     });
 
     this._writeData(packet);
+  }
+
+  _waitForResponse = async (
+    event: string,
+    messageID?: number,
+  ): Promise<void> => {
+    messageID = messageID || this._messageID;
+    let timeout = null;
+    return Promise.race([
+      new Promise((resolve, reject) => {
+        const handler = (packet: CoapPacket) => {
+          if (packet.messageId === messageID) {
+            clearTimeout(timeout);
+            timeout = null;
+            this._eventEmitter.removeListener(event, handler);
+            resolve(packet);
+          }
+        };
+        this._eventEmitter.on(event, handler);
+      }),
+      new Promise((resolve, reject) => {
+        timeout = setTimeout(() => reject(), 10000);
+      }),
+    ])
   }
 
   _writeData = (packet: Object): void => {

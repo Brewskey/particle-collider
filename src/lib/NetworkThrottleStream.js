@@ -16,10 +16,16 @@ class NetworkThrottleStream extends Transform {
     encoding: string,
     callback: Function,
   ) => {
-    setTimeout(() => {
+    const action = () => {
       this.push(chunk);
       callback();
-    }, this._millisecondDelay);
+    };
+    if (!this._millisecondDelay) {
+      action();
+      return;
+    }
+
+    setTimeout(action, this._millisecondDelay);
   }
 }
 
