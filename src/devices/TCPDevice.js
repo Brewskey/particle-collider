@@ -430,7 +430,7 @@ class TCPDevice {
       return;
     }
 
-    const returnValue = 1; // Success!
+    const returnValue = Math.ceil(Math.random() * 100000); // Success!
 
     const packet = CoapPacket.generate({
       code: '2.04',
