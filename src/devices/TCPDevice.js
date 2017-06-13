@@ -287,8 +287,9 @@ class TCPDevice {
       return;
     }
     const path = uriOption.value.toString('utf8');
+    const messageType = path.substring(0, path.indexOf('/')) || path;
     const payload = packet.payload;
-    switch (path) {
+    switch (messageType) {
       case CoapUriType.Describe: {
         let descriptionFlags = DESCRIBE_ALL;
         if (payload.length > 8 && payload[8] <= DESCRIBE_ALL) {

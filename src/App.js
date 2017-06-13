@@ -339,10 +339,13 @@ class App {
         }));
       }
 
+      console.log(`Adding ${this._devices.length}: ${deviceID}`);
       this._devices.push(device);
     }
 
-    this._devices.map(device => device.connect());
+    this._devices
+      .filter(device => !device.getIsConnected())
+      .map(device => device.connect());
 
     console.time('Time To Connect Devices');
     (new Promise(resolve => setInterval(() => {
