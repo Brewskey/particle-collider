@@ -549,7 +549,7 @@ class App {
   _promise(fakePromise: Object): Promise<*> {
     return new Promise((resolve, reject): void => {
       fakePromise.then(resolve, reject);
-    }).catch(error => console.error(error));
+    }).catch(error => console.error(error.errorDescription, error.error));
   }
 
   _saveConfig(): void {

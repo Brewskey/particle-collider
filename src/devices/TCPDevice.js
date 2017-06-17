@@ -43,6 +43,7 @@ class TCPDevice {
   _decipherStream: CryptoStream;
   _deviceID: Buffer;
   _eventEmitter: EventEmitter = new EventEmitter();
+  _helloTimeout: ?number;
   _isConnected: boolean;
   _isConnecting: boolean;
   _isDisconnected: boolean;
@@ -261,6 +262,11 @@ class TCPDevice {
 
         this._sendHello();
 
+        this._helloTimeout = setTimeout(
+          () => {throw new Error('Did not get hello response in 2 seconds');},
+          2000,
+        );
+
         this._state = 'next';
 
         // Ping every 10 seconds
@@ -313,6 +319,8 @@ class TCPDevice {
 
       case CoapUriType.Hello: {
         // spark-server says hi
+        clearTimeout(this._helloTimeout);
+        this._helloTimeout = null;
         break;
       }
 
@@ -395,7 +403,7 @@ class TCPDevice {
     // TODO: make this a bit more fancy
 
     const description = JSON.stringify({
-      testfn: {args: [['data', 'INT']]},
+      f: ['testfn'],
       v: {'testVar': 'INT'},
       // Copypasta'd from a real device
       "p":6,"m":[{"s":16384,"l":"m","vc":30,"vv":30,"f":"b","n":"0","v":11,"d":[]},{"s":262144,"l":"m","vc":30,"vv":30,"f":"s","n":"1","v":105,"d":[]},{"s":262144,"l":"m","vc":30,"vv":30,"f":"s","n":"2","v":105,"d":[{"f":"s","n":"1","v":105,"_":""}]},{"s":131072,"l":"m","vc":30,"vv":30,"u":"2BA4E71E840F596B812003882AAE7CA6496F1590CA4A049310AF76EAF11C943A","f":"u","n":"1","v":2,"d":[{"f":"s","n":"2","v":1,"_":""}]},{"s":131072,"l":"f","vc":30,"vv":0,"d":[]}]
