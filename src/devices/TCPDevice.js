@@ -27,10 +27,7 @@ const DESCRIBE_APPLICATION = 1 << 1;
 const DESCRIBE_SYSTEM = 1 << 0;
 const DESCRIBE_ALL = DESCRIBE_APPLICATION | DESCRIBE_SYSTEM;
 
-type DeviceState =
-  | 'next'
-  | 'nonce'
-  | 'set-session-key';
+type DeviceState = 'next' | 'nonce' | 'set-session-key';
 
 type TCPDeviceOptions = {
   deviceID: ?string,
@@ -58,13 +55,12 @@ class TCPDevice {
   _state: DeviceState;
   _token: Buffer;
 
-  constructor({deviceID, networkDelay, serverAddress}: TCPDeviceOptions) {
+  constructor({ deviceID, networkDelay, serverAddress }: TCPDeviceOptions) {
     this._state = 'nonce';
     this._port = 5683;
     this._networkDelay = networkDelay;
     this._serverAddress = serverAddress;
     this._serverKey = CryptoManager.getServerKey();
-
 
     const index = serverAddress.indexOf('://');
     if (index >= 0) {
@@ -79,12 +75,12 @@ class TCPDevice {
       const privateKey = CryptoManager.createKey();
       fs.writeFileSync(
         `./data/keys/${deviceID}.pem`,
-        privateKey.exportKey('pkcs1-private-pem'),
+        privateKey.exportKey('pkcs1-private-pem')
       );
     }
 
     this._privateKey = CryptoManager.loadPrivateKey(
-      fs.readFileSync(`./data/keys/${deviceID}.pem`, 'utf8'),
+      fs.readFileSync(`./data/keys/${deviceID}.pem`, 'utf8')
     );
     this._deviceID = Buffer.from(deviceID, 'hex');
   }
@@ -96,29 +92,17 @@ class TCPDevice {
     this._isConnecting = true;
     this._socket = new Socket();
 
-
     this._socket.connect({
       host: this._serverAddress,
       port: this._port,
     });
+    this._socket.setTimeout(31000);
 
-    this._socket.on(
-      'data',
-      this._onReadData,
-    );
+    this._socket.on('data', this._onReadData);
 
-    this._socket.on(
-      'error',
-      this._reconnect,
-    );
-    this._socket.on(
-      'close',
-      this._reconnect,
-    );
-    this._socket.on(
-      'timeout',
-      this._reconnect,
-    );
+    this._socket.on('error', () => this._reconnect('error'));
+    this._socket.on('close', () => this._reconnect('close'));
+    this._socket.on('timeout', () => this._reconnect('timeout'));
   }
 
   getDeviceID(): string {
@@ -136,20 +120,20 @@ class TCPDevice {
   sendWebhook = (): void => {
     this._sendEvent(
       testWebhook.name,
-      Buffer.from(`{"payload": "${Math.random()}"}`,
-    ));
+      Buffer.from(`{"payload": "${Math.random()}"}`)
+    );
   };
 
-  on = <TValue>(event: string, callback: TValue => void) =>
+  on = <TValue>(event: string, callback: (TValue) => void) =>
     this._eventEmitter.on(event, callback);
 
-  removeEventListener = <TValue>(event: string, callback: TValue => void) =>
+  removeEventListener = <TValue>(event: string, callback: (TValue) => void) =>
     this._eventEmitter.removeListener(event, callback);
 
   disconnect = (): void => {
     this._disconnect();
     this._isDisconnected = true;
-  }
+  };
 
   _disconnect = (): void => {
     if (this._isDisconnected) {
@@ -166,19 +150,19 @@ class TCPDevice {
     this._socket.removeAllListeners();
     if (!this._socket.destroyed) {
       this._socket.destroy();
-      this._socket.on(
-        'error',
-        () => {},
-      );
+      this._socket.on('error', () => {});
     }
 
     if (this._pingInterval) {
       clearInterval(this._pingInterval);
       this._pingInterval = null;
     }
-  }
+  };
 
   _reconnect = (error: Error): void => {
+    if (error) {
+      console.error(error);
+    }
     if (this._isDisconnected) {
       return;
     }
@@ -187,7 +171,11 @@ class TCPDevice {
     setTimeout(() => this.connect(), 15000);
   };
 
+  _sleep = async (time = 100): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, time));
+
   _onReadData = async (data: Buffer): Promise<void> => {
+    await this._sleep();
     switch (this._state) {
       case 'nonce': {
         const payload = this._prepareDevicePublicKey(data);
@@ -205,10 +193,7 @@ class TCPDevice {
         const sessionKey = this._privateKey.decrypt(cipherText);
         // Server creates a 20-byte HMAC of the ciphertext using SHA1 and the 40
         // bytes generated in the previous step as the HMAC key.
-        const hash = CryptoManager.createHmacDigest(
-          cipherText,
-          sessionKey,
-        );
+        const hash = CryptoManager.createHmacDigest(cipherText, sessionKey);
 
         const decryptedHMAC = this._serverKey.decryptPublic(signedHMAC);
 
@@ -222,7 +207,7 @@ class TCPDevice {
         const iv = sessionKey.slice(16, 32);
         const salt = sessionKey.slice(32); // not sure what this is for...
 
-        this._messageID = sessionKey[32] << 8 | sessionKey[33];
+        this._messageID = (sessionKey[32] << 8) | sessionKey[33];
         this._token = sessionKey.slice(34);
 
         // Create the crypto streams
@@ -262,10 +247,9 @@ class TCPDevice {
 
         this._sendHello();
 
-        this._helloTimeout = setTimeout(
-          () => {throw new Error('Did not get hello response in 2 seconds');},
-          2000,
-        );
+        this._helloTimeout = setTimeout(() => {
+          throw new Error('Did not get hello response in 2 seconds');
+        }, 3000);
 
         this._state = 'next';
 
@@ -280,7 +264,7 @@ class TCPDevice {
         console.log('do the next thing', data);
       }
     }
-  }
+  };
 
   _onNewCoapMessage = async (data: Buffer): Promise<void> => {
     const packet = CoapPacket.parse(data);
@@ -288,7 +272,9 @@ class TCPDevice {
       this._eventEmitter.emit('ACK', packet);
     }
 
-    const uriOption = packet.options.find(option => option.name === 'Uri-Path');
+    const uriOption = packet.options.find(
+      (option) => option.name === 'Uri-Path'
+    );
     if (!uriOption) {
       return;
     }
@@ -327,8 +313,8 @@ class TCPDevice {
       case CoapUriType.PrivateEvent:
       case CoapUriType.PublicEvent: {
         const uris = packet.options
-          .filter(o => o.name === 'Uri-Path')
-          .map(o => o.value.toString('utf8'));
+          .filter((o) => o.name === 'Uri-Path')
+          .map((o) => o.value.toString('utf8'));
         uris.shift(); // Remove E or e
         uris.pop(); // Remove index of the packet 0-X in the data buffer
         this._eventEmitter.emit(uris.join('/'), packet);
@@ -344,18 +330,16 @@ class TCPDevice {
         console.warn(`Coap URI ${path} is not supported: ${packet}`);
       }
     }
-  }
+  };
 
   _prepareDevicePublicKey(nonce: Buffer): Buffer {
     // Concat a bunch of data that we will send over encrypted with the
     // server public key.
-    return Buffer.concat(
-      [
-        nonce,
-        this._deviceID,
-        this._privateKey.exportKey('pkcs8-public-der'),
-      ],
-    );
+    return Buffer.concat([
+      nonce,
+      this._deviceID,
+      this._privateKey.exportKey('pkcs8-public-der'),
+    ]);
   }
 
   _nextMessageID(): number {
@@ -368,7 +352,7 @@ class TCPDevice {
   }
 
   _coapMessageHeader(type: number, tokenLength: number) {
-    return (COAP_VERSION << 6 | type << 4 | (tokenLength & 0xF));
+    return (COAP_VERSION << 6) | (type << 4) | (tokenLength & 0xf);
   }
 
   _sendHello(): void {
@@ -384,15 +368,17 @@ class TCPDevice {
       this._deviceID.length >> 8,
       this._deviceID.length & 0xff,
     ];
-    this._deviceID.forEach(bit => data.push(bit));
+    this._deviceID.forEach((bit) => data.push(bit));
 
     const packet = CoapPacket.generate({
       code: 'POST',
       messageId: this._nextMessageID(),
-      options: [{
-        name: 'Uri-Path',
-        value: new Buffer('h'),
-      }],
+      options: [
+        {
+          name: 'Uri-Path',
+          value: new Buffer('h'),
+        },
+      ],
       payload: new Buffer(data),
     });
 
@@ -404,10 +390,36 @@ class TCPDevice {
 
     const description = JSON.stringify({
       f: ['testfn'],
-      v: {'testVar': 'INT'},
+      v: { testVar: 'INT' },
       // Copypasta'd from a real device
-      "p":6,"m":[{"s":16384,"l":"m","vc":30,"vv":30,"f":"b","n":"0","v":11,"d":[]},{"s":262144,"l":"m","vc":30,"vv":30,"f":"s","n":"1","v":105,"d":[]},{"s":262144,"l":"m","vc":30,"vv":30,"f":"s","n":"2","v":105,"d":[{"f":"s","n":"1","v":105,"_":""}]},{"s":131072,"l":"m","vc":30,"vv":30,"u":"2BA4E71E840F596B812003882AAE7CA6496F1590CA4A049310AF76EAF11C943A","f":"u","n":"1","v":2,"d":[{"f":"s","n":"2","v":1,"_":""}]},{"s":131072,"l":"f","vc":30,"vv":0,"d":[]}]
-    })
+      p: 6,
+      m: [
+        { s: 16384, l: 'm', vc: 30, vv: 30, f: 'b', n: '0', v: 11, d: [] },
+        { s: 262144, l: 'm', vc: 30, vv: 30, f: 's', n: '1', v: 105, d: [] },
+        {
+          s: 262144,
+          l: 'm',
+          vc: 30,
+          vv: 30,
+          f: 's',
+          n: '2',
+          v: 105,
+          d: [{ f: 's', n: '1', v: 105, _: '' }],
+        },
+        {
+          s: 131072,
+          l: 'm',
+          vc: 30,
+          vv: 30,
+          u: '2BA4E71E840F596B812003882AAE7CA6496F1590CA4A049310AF76EAF11C943A',
+          f: 'u',
+          n: '1',
+          v: 2,
+          d: [{ f: 's', n: '2', v: 1, _: '' }],
+        },
+        { s: 131072, l: 'f', vc: 30, vv: 0, d: [] },
+      ],
+    });
 
     const packet = CoapPacket.generate({
       code: '2.05', // Content
@@ -416,7 +428,7 @@ class TCPDevice {
       token: serverPacket.token,
     });
 
-    this._writeData(packet)
+    this._writeData(packet);
   }
 
   _pingServer(): void {
@@ -446,10 +458,10 @@ class TCPDevice {
       token: serverPacket.token,
       payload: new Buffer([
         returnValue >> 24,
-        returnValue >> 16 & 0xff,
-        returnValue >> 8 & 0xff,
+        (returnValue >> 16) & 0xff,
+        (returnValue >> 8) & 0xff,
         returnValue & 0xff,
-      ])
+      ]),
     });
 
     this._writeData(packet);
@@ -469,10 +481,10 @@ class TCPDevice {
       token: serverPacket.token,
       payload: new Buffer([
         result >> 24,
-        result >> 16 & 0xff,
-        result >> 8 & 0xff,
+        (result >> 16) & 0xff,
+        (result >> 8) & 0xff,
         result & 0xff,
-      ])
+      ]),
     });
 
     this._writeData(packet);
@@ -481,13 +493,13 @@ class TCPDevice {
   _subscribeWebhooks = async (): Promise<void> => {
     await this._subscribe(
       `hook-response/test-webhook/${this.getDeviceID()}`,
-      (packet: CoapPacket) => {},
+      (packet: CoapPacket) => {}
     );
-  }
+  };
 
   _subscribe = async (
     eventName: string,
-    callback: (packet: CoapPacket) => void,
+    callback: (packet: CoapPacket) => void
   ): Promise<void> => {
     if (!this._isConnected) {
       return;
@@ -500,10 +512,12 @@ class TCPDevice {
       code: 'GET',
       confirmable: true,
       messageId: messageID,
-      options: [{
-        name: 'Uri-Path',
-        value: new Buffer(`e/${eventName}`),
-      }],
+      options: [
+        {
+          name: 'Uri-Path',
+          value: new Buffer(`e/${eventName}`),
+        },
+      ],
     });
 
     this._writeData(packet);
@@ -512,7 +526,7 @@ class TCPDevice {
     } catch (error) {
       console.log(`No ACK for ${eventName}`);
     }
-  }
+  };
 
   _sendEvent(eventName: string, payload: Buffer): void {
     if (!this._isConnected) {
@@ -523,10 +537,12 @@ class TCPDevice {
       code: 'POST',
       confirmable: true,
       messageId: this._nextMessageID(),
-      options: [{
-        name: 'Uri-Path',
-        value: new Buffer(`e/${eventName}`),
-      }],
+      options: [
+        {
+          name: 'Uri-Path',
+          value: new Buffer(`e/${eventName}`),
+        },
+      ],
       payload,
     });
 
@@ -535,7 +551,7 @@ class TCPDevice {
 
   _waitForResponse = async (
     event: string,
-    messageID?: number,
+    messageID?: number
   ): Promise<void> => {
     messageID = messageID || this._messageID;
     let timeout = null;
@@ -554,14 +570,14 @@ class TCPDevice {
       new Promise((resolve, reject) => {
         timeout = setTimeout(() => reject(), 10000);
       }),
-    ])
-  }
+    ]);
+  };
 
   _writeData = (packet: Object): void => {
     try {
       !this._socket.destroyed && this._cipherStream.write(packet);
     } catch (ignore) {}
-  }
+  };
 }
 
 export default TCPDevice;

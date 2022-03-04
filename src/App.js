@@ -11,7 +11,6 @@ import testWebhook from './test-webhook.json';
 import CryptoManager from './lib/CryptoManager';
 import TCPDevice from './devices/TCPDevice';
 
-
 type ReadlineInterface = {
   close(): void,
   question(question: string, (answer: string) => void): void,
@@ -31,8 +30,8 @@ type Config = {
 const USERNAME = '__test__@testaccount.com';
 const PASSWORD = 'password';
 const PARTICLE_API_CONFIG = {
-  clientId: "particle-collider",
-  clientSecret: "particle-collider",
+  clientId: 'particle-collider',
+  clientSecret: 'particle-collider',
 };
 const FOLDER_PATH = './data';
 const CONFIG_FILE_PATH = FOLDER_PATH + '/configs.json';
@@ -40,16 +39,14 @@ const CONFIG_FILE_PATH = FOLDER_PATH + '/configs.json';
 const formatOption = (
   key: string | number,
   description: string,
-  strikeThrough?: number | boolean,
+  strikeThrough?: number | boolean
 ) => {
   if (strikeThrough) {
     return;
   }
 
-  console.log(
-    `${chalk.bgYellow.black(key)} ${description}`,
-  );
-}
+  console.log(`${chalk.bgYellow.black(key)} ${description}`);
+};
 
 class App {
   _accessToken: string;
@@ -64,9 +61,11 @@ class App {
   _webhookInterval: number;
 
   constructor() {
-    console.log('    ____             __  _      __        ______      _____     __         \n   / __ \\____ ______/ /_(_)____/ /__     / ____/___  / / (_)___/ /__  _____\n  / /_/ / __ `/ ___/ __/ / ___/ / _ \\   / /   / __ \\/ / / / __  / _ \\/ ___/\n / ____/ /_/ / /  / /_/ / /__/ /  __/  / /___/ /_/ / / / / /_/ /  __/ /    \n/_/    \\__,_/_/   \\__/_/\\___/_/\\___/   \\____/\\____/_/_/_/\\__,_/\\___/_/     \n                                                                           \n');
+    console.log(
+      '    ____             __  _      __        ______      _____     __         \n   / __ \\____ ______/ /_(_)____/ /__     / ____/___  / / (_)___/ /__  _____\n  / /_/ / __ `/ ___/ __/ / ___/ / _ \\   / /   / __ \\/ / / / __  / _ \\/ ___/\n / ____/ /_/ / /  / /_/ / /__/ /  __/  / /___/ /_/ / / / / /_/ /  __/ /    \n/_/    \\__,_/_/   \\__/_/\\___/_/\\___/   \\____/\\____/_/_/_/\\__,_/\\___/_/     \n                                                                           \n'
+    );
 
-    this._rl = readline.createInterface({input: process.stdin});
+    this._rl = readline.createInterface({ input: process.stdin });
   }
 
   run = async (): Promise<void> => {
@@ -85,20 +84,17 @@ class App {
       await this._setup(config);
     }
     while (!this._exit) {
-      const connectedDeviceCount =
-        this._devices.filter(device => device.getIsConnected()).length;
+      const connectedDeviceCount = this._devices.filter((device) =>
+        device.getIsConnected()
+      ).length;
       console.log('');
       console.log(
         chalk.green(
           `${connectedDeviceCount} of ${this._devices.length} virtual ` +
-          `devices currently connected`,
-        ),
+            `devices currently connected`
+        )
       );
-      console.log(
-        chalk.green(
-          `${this._existingDeviceIDs.length} claimed`,
-        ),
-      );
+      console.log(chalk.green(`${this._existingDeviceIDs.length} claimed`));
 
       this._renderMenu();
 
@@ -162,7 +158,7 @@ class App {
     }
 
     this._rl.close();
-  }
+  };
 
   _clearIntervals = (): void => {
     clearInterval(this._functionInterval);
@@ -179,9 +175,9 @@ class App {
     await this._setupWebhooks(config);
 
     this._existingDeviceIDs = await this._promise(
-      this._particle.listDevices({auth: this._accessToken}),
-    ).then(result => result.body.map(device => device.id));
-  }
+      this._particle.listDevices({ auth: this._accessToken })
+    ).then((result) => result.body.map((device) => device.id));
+  };
 
   _renderMenu(): void {
     console.log('');
@@ -196,9 +192,7 @@ class App {
     formatOption(
       8,
       'Chaos-Monkey -- run all the things!',
-      this._functionInterval &&
-      this._variableInterval &&
-      this._webhookInterval,
+      this._functionInterval && this._variableInterval && this._webhookInterval
     );
 
     if (
@@ -214,14 +208,14 @@ class App {
   }
 
   _setupNewConfig = async (): Promise<Config> => {
-    const config = {serverKeyPath: '', serverPort: 8080, serverUrl: ''};
+    const config = { serverKeyPath: '', serverPort: 8080, serverUrl: '' };
 
     const getServerKey = async (): Promise<void> => {
       console.log(
         'In order to connect the virtual Particle devices, we need the ' +
-        'public key to your local cloud server. What is the relative or ' +
-        'absolute path to your server key?\r\n\r\nIt looks like ' +
-        'server-key.pub.pem\r\n',
+          'public key to your local cloud server. What is the relative or ' +
+          'absolute path to your server key?\r\n\r\nIt looks like ' +
+          'server-key.pub.pem\r\n'
       );
       const serverKeyPath = await this._question();
 
@@ -237,7 +231,7 @@ class App {
     const getServerUrl = async (): Promise<void> => {
       console.log('Now we need the host name or IP address of your server.');
       console.log(
-        'It can look like 192.168.0.175 or https://cloud.particle.io',
+        'It can look like 192.168.0.175 or https://cloud.particle.io'
       );
       const serverUrl = await this._question();
       config.serverUrl = serverUrl;
@@ -251,9 +245,7 @@ class App {
         await getServerPort();
       }
 
-      config.serverPort = port
-        ? parseInt(port, 10)
-        : config.serverPort;
+      config.serverPort = port ? parseInt(port, 10) : config.serverPort;
     };
 
     await getServerKey();
@@ -270,15 +262,13 @@ class App {
     await this._setup(config);
 
     return config;
-  }
+  };
 
   _setDefaultConfig = async (): Promise<void> => {
     console.log('Pick a default config');
     const configs = this._configData.configs;
-    configs.map(
-      (config, index) => console.log(
-        `${chalk.green(index + 1)} ${config.serverUrl}`,
-      ),
+    configs.map((config, index) =>
+      console.log(`${chalk.green(index + 1)} ${config.serverUrl}`)
     );
     const answer = await this._question();
     if (!answer) {
@@ -293,7 +283,7 @@ class App {
 
     const configIndex = parseInt(answer, 10) - 1;
     if (configIndex < 0 || configIndex >= configs.length) {
-      console.log('Not a valid config.')
+      console.log('Not a valid config.');
       await this._setDefaultConfig();
       return;
     }
@@ -317,13 +307,14 @@ class App {
     const amount = parseInt(amountString, 10);
     for (let ii = 0; ii < amount; ii++) {
       const index = this._devices.length;
-      let deviceID = this._existingDeviceIDs.length > index
-        ? this._existingDeviceIDs[index]
-        : null;
+      let deviceID =
+        this._existingDeviceIDs.length > index
+          ? this._existingDeviceIDs[index]
+          : null;
       const device = new TCPDevice({
         deviceID,
         // Simulate devices that take longer to send data
-        networkDelay: 0, //Math.random() * 1000 + 500,
+        networkDelay: Math.floor(Math.random() * 1000),
         serverAddress: config.serverUrl,
       });
 
@@ -332,11 +323,13 @@ class App {
       if (!deviceID) {
         deviceID = device.getDeviceID();
         this._existingDeviceIDs.push(deviceID);
-        await this._promise(this._particle.sendPublicKey({
-          auth: this._accessToken,
-          deviceId: deviceID,
-          key: device.getPublicKey(),
-        }));
+        await this._promise(
+          this._particle.sendPublicKey({
+            auth: this._accessToken,
+            deviceId: deviceID,
+            key: device.getPublicKey(),
+          })
+        );
       }
 
       console.log(`Adding ${this._devices.length}: ${deviceID}`);
@@ -344,15 +337,17 @@ class App {
     }
 
     this._devices
-      .filter(device => !device.getIsConnected())
-      .map(device => device.connect());
+      .filter((device) => !device.getIsConnected())
+      .map((device) => device.connect());
 
     console.time('Time To Connect Devices');
-    (new Promise(resolve => setInterval(() => {
-      if (this._devices.every(device => device.getIsConnected())) {
-        resolve();
-      }
-    }))).then(() => console.timeEnd('Time To Connect Devices'));
+    new Promise((resolve) =>
+      setInterval(() => {
+        if (this._devices.every((device) => device.getIsConnected())) {
+          resolve();
+        }
+      })
+    ).then(() => console.timeEnd('Time To Connect Devices'));
   };
 
   _stopDevices = async (): Promise<void> => {
@@ -365,21 +360,22 @@ class App {
 
     let amount = parseInt(amountString, 10);
     this._killDevices(amount);
-  }
+  };
 
   _killDevices(amount: number): void {
     const idsToAdd = [];
     while (amount) {
       amount -= 1;
-      const index = Math.floor(Math.random() * this._devices.length );
+      const index = Math.floor(Math.random() * this._devices.length);
       const device = this._devices[index];
       const deviceID = device.getDeviceID();
       this._devices = this._devices.filter(
-        device => device.getDeviceID() !== deviceID,
+        (device) => device.getDeviceID() !== deviceID
       );
       idsToAdd.push(deviceID);
-      this._existingDeviceIDs =
-        this._existingDeviceIDs.filter(id => id !== deviceID);
+      this._existingDeviceIDs = this._existingDeviceIDs.filter(
+        (id) => id !== deviceID
+      );
 
       device.disconnect();
     }
@@ -414,43 +410,40 @@ class App {
   };
 
   // Runs server actions with 10% of devices
-  _runServerAction(
-    callback: (device: TCPDevice) => *,
-  ): number {
+  _runServerAction(callback: (device: TCPDevice) => *): number {
     if (!this._devices.length) {
       console.log();
-      console.log(chalk.red('You don\'t have any devices running. Start some'));
+      console.log(chalk.red("You don't have any devices running. Start some"));
       return 0;
     }
 
     const INTERVAL = 5000;
     const callAction = () => {
-      let devices = this._devices.filter(device => device.getIsConnected());
-      devices = devices.slice(0, Math.ceil(devices.length * .1));
-      devices.forEach(
-        device => setTimeout(
-          () => callback(device),
-          Math.random() * INTERVAL,
-        ),
+      let devices = this._devices.filter((device) => device.getIsConnected());
+      devices = devices.slice(0, Math.ceil(devices.length * 0.1));
+      devices.forEach((device) =>
+        setTimeout(() => callback(device), Math.random() * INTERVAL)
       );
     };
 
     callAction();
     return setInterval(callAction, INTERVAL);
-  };
+  }
 
   _callFunctions = async (): Promise<void> => {
     if (this._functionInterval) {
       return;
     }
 
-    this._functionInterval = this._runServerAction(
-      device => this._promise(this._particle.callFunction({
-        auth: this._accessToken,
-        deviceId: device.getDeviceID(),
-        name: 'testFn',
-        argument: Math.random(),
-      }))
+    this._functionInterval = this._runServerAction((device) =>
+      this._promise(
+        this._particle.callFunction({
+          auth: this._accessToken,
+          deviceId: device.getDeviceID(),
+          name: 'testFn',
+          argument: Math.random(),
+        })
+      )
     );
   };
 
@@ -459,12 +452,14 @@ class App {
       return;
     }
 
-    this._variableInterval = this._runServerAction(
-      device => this._promise(this._particle.getVariable({
-        auth: this._accessToken,
-        deviceId: device.getDeviceID(),
-        name: 'testVar',
-      }))
+    this._variableInterval = this._runServerAction((device) =>
+      this._promise(
+        this._particle.getVariable({
+          auth: this._accessToken,
+          deviceId: device.getDeviceID(),
+          name: 'testVar',
+        })
+      )
     );
   };
 
@@ -473,28 +468,31 @@ class App {
       return;
     }
 
-    this._webhookInterval =
-      this._runServerAction(device => device.sendWebhook());
+    this._webhookInterval = this._runServerAction((device) =>
+      device.sendWebhook()
+    );
   };
 
   _chaosMonkey = async (): Promise<void> => {
     this._callFunctions();
     this._callVariables();
     this._callWebhooks();
-  }
+  };
 
   _setupWebhooks = async (config: Config): Promise<void> => {
     const webhooks = await this._promise(
-      this._particle.listWebhooks({auth: this._accessToken}),
+      this._particle.listWebhooks({ auth: this._accessToken })
     );
 
     if (webhooks && webhooks.body.length) {
-      const promises = webhooks.body.map(webhook => this._promise(
-        this._particle.deleteWebhook({
-          auth: this._accessToken,
-          hookId: webhook.id,
-        }),
-      ));
+      const promises = webhooks.body.map((webhook) =>
+        this._promise(
+          this._particle.deleteWebhook({
+            auth: this._accessToken,
+            hookId: webhook.id,
+          })
+        )
+      );
       await Promise.all(promises);
     }
 
@@ -502,31 +500,34 @@ class App {
       this._particle.createWebhook({
         ...testWebhook,
         auth: this._accessToken,
-        url: (config.serverPort === 443
-          ? 'https'
-          : 'http'
-        ) + '://' + config.serverUrl + ':' + config.serverPort + '/v1/ping',
-      }),
+        url:
+          (config.serverPort === 443 ? 'https' : 'http') +
+          '://' +
+          config.serverUrl +
+          ':' +
+          config.serverPort +
+          '/v1/ping',
+      })
     );
   };
 
   _question = async (): Promise<string> => {
     return new Promise((resolve, reject) => {
-      this._rl.question('', answer => resolve(answer));
+      this._rl.question('', (answer) => resolve(answer));
     });
   };
 
   _setupData(): void {
     if (!fs.existsSync(FOLDER_PATH)) {
-      fs.mkdir(FOLDER_PATH);
+      fs.mkdirSync(FOLDER_PATH);
     }
 
     if (!fs.existsSync(`${FOLDER_PATH}/keys`)) {
-      fs.mkdir(`${FOLDER_PATH}/keys`);
+      fs.mkdirSync(`${FOLDER_PATH}/keys`);
     }
 
     if (!fs.existsSync(CONFIG_FILE_PATH)) {
-      this._configData = {configs:[], defaultConfigIndex: -1};
+      this._configData = { configs: [], defaultConfigIndex: -1 };
       this._saveConfig();
     } else {
       this._configData = JSON.parse(fs.readFileSync(CONFIG_FILE_PATH, 'utf8'));
@@ -534,7 +535,7 @@ class App {
   }
 
   _getConfig(): ?Config {
-    const {configs, defaultConfigIndex} = this._configData;
+    const { configs, defaultConfigIndex } = this._configData;
     if (defaultConfigIndex === -1 || defaultConfigIndex >= configs.length) {
       return null;
     }
@@ -549,7 +550,7 @@ class App {
   _promise(fakePromise: Object): Promise<*> {
     return new Promise((resolve, reject): void => {
       fakePromise.then(resolve, reject);
-    }).catch(error => console.error(error.errorDescription, error.error));
+    }).catch((error) => console.error(error.errorDescription, error.error));
   }
 
   _saveConfig(): void {
