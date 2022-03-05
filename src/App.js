@@ -7,6 +7,7 @@ import Particle from 'particle-api-js';
 import readline from 'readline';
 import superagentPromise from 'superagent-promise';
 import testWebhook from './test-webhook.json';
+import path from 'path';
 
 import CryptoManager from './lib/CryptoManager';
 import TCPDevice from './devices/TCPDevice';
@@ -33,8 +34,8 @@ const PARTICLE_API_CONFIG = {
   clientId: 'particle-collider',
   clientSecret: 'particle-collider',
 };
-const FOLDER_PATH = './data';
-const CONFIG_FILE_PATH = FOLDER_PATH + '/configs.json';
+const FOLDER_PATH = path.join(process.cwd(), 'data/');
+const CONFIG_FILE_PATH = path.join(FOLDER_PATH, 'configs.json');
 
 const formatOption = (
   key: string | number,

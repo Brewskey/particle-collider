@@ -5,6 +5,7 @@ import EventEmitter from 'events';
 import fs from 'fs';
 import { Socket } from 'net';
 import NodeRSA from 'node-rsa';
+import path from 'path';
 
 import ChunkingStream from '../lib/ChunkingStream';
 import CoapType from '../lib/CoapType';
@@ -74,13 +75,16 @@ class TCPDevice {
         .toLowerCase();
       const privateKey = CryptoManager.createKey();
       fs.writeFileSync(
-        `./data/keys/${deviceID}.pem`,
+        path.join(process.cwd(), `data/keys/${deviceID}.pem`),
         privateKey.exportKey('pkcs1-private-pem')
       );
     }
 
     this._privateKey = CryptoManager.loadPrivateKey(
-      fs.readFileSync(`./data/keys/${deviceID}.pem`, 'utf8')
+      fs.readFileSync(
+        path.join(process.cwd(), `data/keys/${deviceID}.pem`),
+        'utf8'
+      )
     );
     this._deviceID = Buffer.from(deviceID, 'hex');
   }
