@@ -312,6 +312,15 @@ class App {
         this._existingDeviceIDs.length > index
           ? this._existingDeviceIDs[index]
           : null;
+
+      if (
+        deviceID &&
+        !fs.existsSync(path.join(process.cwd(), `data/keys/${deviceID}.pem`))
+      ) {
+        this._existingDeviceIDs.splice(ii, 1);
+        deviceID = null;
+      }
+
       const device = new TCPDevice({
         deviceID,
         // Simulate devices that take longer to send data
