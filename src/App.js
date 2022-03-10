@@ -378,6 +378,9 @@ class App {
       amount -= 1;
       const index = Math.floor(Math.random() * this._devices.length);
       const device = this._devices[index];
+      if (!device) {
+        continue;
+      }
       const deviceID = device.getDeviceID();
       this._devices = this._devices.filter(
         (device) => device.getDeviceID() !== deviceID
