@@ -175,9 +175,9 @@ class App {
     await this._login(config);
     await this._setupWebhooks(config);
 
-    this._existingDeviceIDs = await this._promise(
-      this._particle.listDevices({ auth: this._accessToken })
-    ).then((result) => result.body.map((device) => device.id));
+    this._existingDeviceIDs = fs
+      .readdirSync(path.join(process.cwd(), `data/keys`))
+      .map((file) => path.parse(file).name);
   };
 
   _renderMenu(): void {
@@ -378,6 +378,9 @@ class App {
       amount -= 1;
       const index = Math.floor(Math.random() * this._devices.length);
       const device = this._devices[index];
+      if (!device) {
+        continue;
+      }
       const deviceID = device.getDeviceID();
       this._devices = this._devices.filter(
         (device) => device.getDeviceID() !== deviceID
