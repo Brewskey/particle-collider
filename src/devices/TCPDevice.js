@@ -76,15 +76,15 @@ class TCPDevice {
       const privateKey = CryptoManager.createKey();
       fs.writeFileSync(
         path.join(process.cwd(), `data/keys/${deviceID}.pem`),
-        privateKey.exportKey('pkcs1-private-pem')
+        privateKey.exportKey('pkcs1-private-pem'),
       );
     }
 
     this._privateKey = CryptoManager.loadPrivateKey(
       fs.readFileSync(
         path.join(process.cwd(), `data/keys/${deviceID}.pem`),
-        'utf8'
-      )
+        'utf8',
+      ),
     );
     this._deviceID = Buffer.from(deviceID, 'hex');
   }
@@ -124,7 +124,7 @@ class TCPDevice {
   sendWebhook = (): void => {
     this._sendEvent(
       testWebhook.name,
-      Buffer.from(`{"payload": "${Math.random()}"}`)
+      Buffer.from(`{"payload": "${Math.random()}"}`),
     );
   };
 
@@ -258,7 +258,7 @@ class TCPDevice {
         this._state = 'next';
 
         // Ping every 10 seconds
-        this._pingInterval = setInterval(() => this._pingServer(), 10000);
+        this._pingInterval = setInterval(() => this._pingServer(), 15000);
         this._isConnected = true;
 
         break;
@@ -277,7 +277,7 @@ class TCPDevice {
     }
 
     const uriOption = packet.options.find(
-      (option) => option.name === 'Uri-Path'
+      (option) => option.name === 'Uri-Path',
     );
     if (!uriOption) {
       return;
@@ -497,13 +497,13 @@ class TCPDevice {
   _subscribeWebhooks = async (): Promise<void> => {
     await this._subscribe(
       `hook-response/test-webhook/${this.getDeviceID()}`,
-      (packet: CoapPacket) => {}
+      (packet: CoapPacket) => {},
     );
   };
 
   _subscribe = async (
     eventName: string,
-    callback: (packet: CoapPacket) => void
+    callback: (packet: CoapPacket) => void,
   ): Promise<void> => {
     if (!this._isConnected) {
       return;
@@ -555,7 +555,7 @@ class TCPDevice {
 
   _waitForResponse = async (
     event: string,
-    messageID?: number
+    messageID?: number,
   ): Promise<void> => {
     messageID = messageID || this._messageID;
     let timeout = null;
